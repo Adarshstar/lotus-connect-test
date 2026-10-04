@@ -1,0 +1,39 @@
+name: Lotus connectivity check
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *'
+jobs:
+  tcp-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: DNS resolve
+        run: |
+          getent hosts lotus.taspmail.online || true
+          getent hosts 13.126.209.44 || true
+      - name: TCP 19132 domain EIP
+        run: |
+          set -e
+          timeout 8 bash -c 'echo >/dev/tcp/13.126.209.44/19132' && echo EIP_TCP_OK || echo EIP_TCP_FAIL
+      - name: TCP 19132 domain name
+        run: |
+          set -e
+          HOST=$(getent hosts lotus.taspmail.online | awk '{print $1; exit}')
+          echo resolved=$HOST
+          timeout 8 bash -c "echo >/dev/tcp/${HOST}/19132" && echo DOMAIN_TCP_OK || echo DOMAIN_TCP_FAIL
+      - name: UDP probe (send only)
+        run: |
+          python3 - <<'PY'
+          import socket
+          s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+          s.settimeout(3)
+          try:
+            s.sendto(b"\x01\x00\x00\x00", ("13.126.209.44", 19132))
+            print("UDP_SEND_OK")
+          except Exception as e:
+            print("UDP_SEND_FAIL", e)
+          finally:
+            s.close()
+          PY
+      - name: Summary
+        run: echo "No secrets used. This only checks public TCP/UDP reachability."
